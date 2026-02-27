@@ -11,8 +11,11 @@ import {
   Shield,
   ChevronLeft,
   ChevronRight,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSimulation } from "@/contexts/SimulationContext";
+import { Switch } from "@/components/ui/switch";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -27,6 +30,7 @@ const navItems = [
 const NavSidebar = () => {
   const [collapsed, setCollapsed] = useState(true);
   const location = useLocation();
+  const sim = useSimulation();
 
   return (
     <aside
@@ -46,7 +50,7 @@ const NavSidebar = () => {
       </div>
 
       {/* Nav items */}
-      <nav className="flex-1 py-4 space-y-1 px-2">
+      <nav className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
@@ -70,6 +74,30 @@ const NavSidebar = () => {
           );
         })}
       </nav>
+
+      {/* Demo Mode Toggle */}
+      {!collapsed && (
+        <div className="px-3 py-3 border-t border-primary/10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Zap className={cn("w-4 h-4", sim.demoMode ? "text-neon-amber" : "text-muted-foreground")} />
+              <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">Demo</span>
+            </div>
+            <Switch checked={sim.demoMode} onCheckedChange={sim.toggleDemoMode} />
+          </div>
+        </div>
+      )}
+      {collapsed && (
+        <div className="px-3 py-3 border-t border-primary/10 flex justify-center">
+          <button
+            onClick={sim.toggleDemoMode}
+            className={cn("p-1.5 rounded transition-colors", sim.demoMode ? "text-neon-amber bg-neon-amber/10" : "text-muted-foreground hover:text-primary")}
+            title="Toggle Demo Mode"
+          >
+            <Zap className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Toggle */}
       <button
