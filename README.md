@@ -1,73 +1,76 @@
-# Welcome to your Lovable project
+# 🛡️ AI-IDS – Cyberpunk AI Intrusion Detection System
 
-## Project info
+![Status](https://img.shields.io/badge/status-hackathon--ready-00FF9C)
+![Tech](https://img.shields.io/badge/stack-Next.js%20%7C%20Node.js%20%7C%20PostgreSQL-00C8FF)
+![Theme](https://img.shields.io/badge/UI-Cyberpunk%20SOC-9D00FF)
+![License](https://img.shields.io/badge/license-MIT-FF003C)
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+> 🚨 A full-stack AI-powered Intrusion Detection System with a futuristic Cyberpunk SOC dashboard, real-time attack simulation, MITRE ATT&CK mapping, and explainable AI assistant.
 
-## How can I edit this code?
+---
 
-There are several ways of editing your application.
+# 🌌 Live Concept
 
-**Use Lovable**
+AI-IDS simulates real-time cyber threats and demonstrates how an intelligent SOC system can detect, classify, and explain attacks with visual analytics and MITRE mapping.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+---
 
-Changes made via Lovable will be committed automatically to this repo.
+# 🧠 Key Features
 
-**Use your preferred IDE**
+## ⚡ Real-Time Attack Simulation
+- DDoS
+- SQL Injection
+- Phishing
+- Brute Force
+- Ransomware
+- Live WebSocket streaming
+- Real-time dashboard updates
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## 🤖 AI Assistant
+- Explain detected attacks
+- Show confidence score
+- Suggest mitigation steps
+- Highlight MITRE technique mapping
+- Generate incident reports
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## 🗺 MITRE ATT&CK Mapping
+- Interactive matrix
+- Auto-highlight triggered techniques
+- Clickable technique detail modal
 
-Follow these steps:
+## 🌐 Network Monitoring
+- Interactive topology graph
+- Suspicious nodes pulse red
+- Block IP action button
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+## 🔍 Threat Intelligence
+- IOC database
+- CVE search
+- Auto-match malicious indicators
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+## 🖥 SOC Full-Screen Mode
+- Immersive command center
+- Live terminal logs
+- Global attack map
+- Critical alert banner
 
-# Step 3: Install the necessary dependencies.
-npm i
+---
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
+# 🏗️ System Architecture
 
-**Edit a file directly in GitHub**
+```mermaid
+graph TD
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+User --> Frontend[Next.js Cyberpunk UI]
+Frontend -->|REST API| Backend(Node.js + Express)
+Frontend -->|WebSocket| Realtime(Socket.io Server)
 
-**Use GitHub Codespaces**
+Backend --> Database[(PostgreSQL)]
+Backend --> AIEngine[AI Detection Engine]
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+AIEngine --> Backend
+Backend --> Frontend
 
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+SimulationEngine --> Backend
+Backend --> Realtime
+Realtime --> Frontend
