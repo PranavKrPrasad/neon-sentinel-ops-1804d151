@@ -345,30 +345,7 @@ const AIAssistant = () => {
             )}
             <div className="space-y-4">
               {messages.map((m, i) => (
-                <div key={i} className={`flex group ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div
-                    className={`max-w-[85%] rounded-lg px-4 py-3 font-mono text-sm relative ${
-                      m.role === "user"
-                        ? "bg-primary/15 border border-primary/30 text-foreground"
-                        : "bg-muted/50 border border-muted text-foreground"
-                    }`}
-                  >
-                    {m.role === "assistant" ? (
-                      <div className="prose prose-sm prose-invert max-w-none [&_h2]:text-primary [&_h2]:text-sm [&_h2]:font-mono [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-neon-blue [&_h3]:text-xs [&_h3]:font-mono [&_strong]:text-primary [&_code]:text-neon-amber [&_code]:bg-background/50 [&_code]:px-1 [&_code]:rounded [&_li]:text-foreground [&_p]:text-foreground [&_pre]:bg-background/70 [&_pre]:border [&_pre]:border-primary/20">
-                        <ReactMarkdown>{m.content}</ReactMarkdown>
-                      </div>
-                    ) : (
-                      <span dangerouslySetInnerHTML={{ __html: highlightKeywords(m.content) }} />
-                    )}
-                    <button
-                      onClick={() => copyMessage(m.content)}
-                      className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-background border border-primary/30 rounded p-1 text-primary hover:bg-primary/10"
-                      title="Copy message"
-                    >
-                      <Copy className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
+                <MessageBubble key={i} m={m} onCopy={copyMessage} />
               ))}
               {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
                 <div className="flex justify-start">
