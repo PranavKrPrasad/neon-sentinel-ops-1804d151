@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, memo, useCallback } from "react";
 import CyberLayout from "@/components/layout/CyberLayout";
 import { Bot, Send, Zap, Map, FileText, Shield, Bug, Network, Search, Trash2, Download, Copy, Cpu, AlertTriangle, BookOpen, Target, Code2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,15 +13,87 @@ import { toast } from "sonner";
 type Msg = { role: "user" | "assistant"; content: string };
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const MAX_HISTORY = 10; // cap messages sent to model to control tokens & latency
 
 const MODELS = [
-  { value: "google/gemini-3-flash-preview", label: "Gemini 3 Flash (Fast)" },
+  { value: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite (Fastest)" },
+  { value: "google/gemini-3-flash-preview", label: "Gemini 3 Flash (Balanced)" },
   { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro (Deep)" },
-  { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-  { value: "openai/gpt-5", label: "GPT-5 (Powerful)" },
   { value: "openai/gpt-5-mini", label: "GPT-5 Mini" },
+  { value: "openai/gpt-5", label: "GPT-5 (Powerful)" },
   { value: "openai/gpt-5.2", label: "GPT-5.2 (Reasoning)" },
 ];
+
+// Memoized message bubble — prevents re-rendering completed messages on every token
+const MessageBubble = memo(({ m, onCopy }: { m: Msg; onCopy: (c: string) => void }) => (
+  <div className={`flex group ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+    <div
+      className={`max-w-[85%] rounded-lg px-4 py-3 font-mono text-sm relative ${
+        m.role === "user"
+          ? "bg-primary/15 border border-primary/30 text-foreground"
+          : "bg-muted/50 border border-muted text-foreground"
+      }`}
+    >
+      {m.role === "assistant" ? (
+        <div className="prose prose-sm prose-invert max-w-none [&_h2]:text-primary [&_h2]:text-sm [&_h2]:font-mono [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-neon-blue [&_h3]:text-xs [&_h3]:font-mono [&_strong]:text-primary [&_code]:text-neon-amber [&_code]:bg-background/50 [&_code]:px-1 [&_code]:rounded [&_li]:text-foreground [&_p]:text-foreground [&_pre]:bg-background/70 [&_pre]:border [&_pre]:border-primary/20">
+          <ReactMarkdown>{m.content}</ReactMarkdown>
+        </div>
+      ) : (
+        <span dangerouslySetInnerHTML={{ __html: highlightKeywords(m.content) }} />
+      )}
+      <button
+        onClick={() => onCopy(m.content)}
+        className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-background border border-primary/30 rounded p-1 text-primary hover:bg-primary/10"
+        title="Copy message"
+      >
+        <Copy className="w-3 h-3" />
+      </button>
+    </div>
+  </div>
+));
+MessageBubble.displayName = "MessageBubble";
+
+// Pick only the context slices relevant to the user's query — saves tokens & latency
+function buildSmartContext(query: string, sim: any) {
+  const q = query.toLowerCase();
+  const ctx: any = {
+    timestamp: new Date().toISOString(),
+    soc_status: sim.isRunning ? "ACTIVE_INCIDENT" : "MONITORING",
+    metrics: {
+      total_threats_24h: sim.totalThreats,
+      blocked_attacks: sim.blockedAttacks,
+      active_alerts: sim.activeAlerts,
+      block_rate_pct: ((sim.blockedAttacks / Math.max(1, sim.totalThreats)) * 100).toFixed(1),
+      defense_score: sim.defenseScore,
+    },
+  };
+  if (sim.isRunning) ctx.active_simulation = { attack_type: sim.attackType, intensity: sim.intensity };
+
+  const wantsMitre = /mitre|t\d{4}|ttp|tactic|technique|attack/i.test(q);
+  const wantsIOC = /ioc|indicator|ip|domain|hash|malicious|threat intel/i.test(q);
+  const wantsNetwork = /network|node|topology|lateral|segment|firewall/i.test(q);
+  const wantsLogs = /log|recent|event|activity|forensic|hunt/i.test(q);
+  const wantsThreat = /threat|attack|incident|explain|analyze|risk/i.test(q);
+
+  if (wantsMitre || wantsThreat) {
+    ctx.detected_mitre_techniques = sim.detectedTechniques.slice(0, 12).map((id: string) => {
+      const t = mitreTechniques.find((x) => x.id === id);
+      return t ? { id: t.id, name: t.name, tactic: t.tactic, severity: t.severity } : { id };
+    });
+  }
+  if (wantsIOC || wantsThreat) {
+    ctx.top_threat_indicators = threatIndicators.slice(0, 5).map((t) => ({
+      type: t.type, value: t.value, severity: t.severity, source: t.source, status: t.status,
+    }));
+  }
+  if (wantsNetwork) {
+    ctx.network_nodes = sim.nodes.map((n: any) => ({ id: n.id, ip: n.ip, type: n.type, status: n.status }));
+  }
+  if (wantsLogs || sim.isRunning) {
+    ctx.recent_logs = sim.logs.slice(0, 6);
+  }
+  return ctx;
+}
 
 const highlightKeywords = (text: string) => {
   return text
