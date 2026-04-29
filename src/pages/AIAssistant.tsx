@@ -1,13 +1,27 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import CyberLayout from "@/components/layout/CyberLayout";
-import { Bot, Send, Zap, Map, FileText } from "lucide-react";
+import { Bot, Send, Zap, Map, FileText, Shield, Bug, Network, Search, Trash2, Download, Copy, Cpu, AlertTriangle, BookOpen, Target, Code2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import ReactMarkdown from "react-markdown";
+import { useSimulation } from "@/contexts/SimulationContext";
+import { threatIndicators, mitreTechniques } from "@/data/mock-data";
+import { toast } from "sonner";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+
+const MODELS = [
+  { value: "google/gemini-3-flash-preview", label: "Gemini 3 Flash (Fast)" },
+  { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro (Deep)" },
+  { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+  { value: "openai/gpt-5", label: "GPT-5 (Powerful)" },
+  { value: "openai/gpt-5-mini", label: "GPT-5 Mini" },
+  { value: "openai/gpt-5.2", label: "GPT-5.2 (Reasoning)" },
+];
 
 const highlightKeywords = (text: string) => {
   return text
@@ -21,32 +35,77 @@ const highlightKeywords = (text: string) => {
 };
 
 const AIAssistant = () => {
+  const sim = useSimulation();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [model, setModel] = useState(MODELS[0].value);
+  const [includeContext, setIncludeContext] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (scrollRef.current) {
+      const vp = scrollRef.current.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null;
+      if (vp) vp.scrollTop = vp.scrollHeight;
+    }
   }, [messages]);
+
+  // Build live system context snapshot to send with each request
+  const systemContext = useMemo(() => ({
+    timestamp: new Date().toISOString(),
+    soc_status: sim.isRunning ? "ACTIVE_INCIDENT" : "MONITORING",
+    metrics: {
+      total_threats_24h: sim.totalThreats,
+      blocked_attacks: sim.blockedAttacks,
+      active_alerts: sim.activeAlerts,
+      block_rate_pct: ((sim.blockedAttacks / Math.max(1, sim.totalThreats)) * 100).toFixed(1),
+      detection_time_seconds: sim.detectionTime,
+      defense_score: sim.defenseScore,
+    },
+    active_simulation: sim.isRunning ? {
+      attack_type: sim.attackType,
+      intensity: sim.intensity,
+    } : null,
+    detected_mitre_techniques: sim.detectedTechniques.map(id => {
+      const t = mitreTechniques.find(x => x.id === id);
+      return t ? { id: t.id, name: t.name, tactic: t.tactic, severity: t.severity } : { id };
+    }),
+    top_threat_indicators: threatIndicators.slice(0, 5).map(t => ({
+      type: t.type, value: t.value, severity: t.severity, source: t.source, status: t.status,
+    })),
+    network_nodes: sim.nodes.map(n => ({
+      id: n.id, ip: n.ip, type: n.type, status: n.status,
+    })),
+    recent_logs: sim.logs.slice(0, 8),
+  }), [sim]);
 
   const streamChat = async (allMessages: Msg[]) => {
     setIsLoading(true);
     let assistantSoFar = "";
+    abortRef.current = new AbortController();
 
     try {
       const resp = await fetch(CHAT_URL, {
         method: "POST",
+        signal: abortRef.current.signal,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ messages: allMessages }),
+        body: JSON.stringify({
+          messages: allMessages,
+          systemContext: includeContext ? systemContext : null,
+          model,
+        }),
       });
 
       if (!resp.ok || !resp.body) {
         const err = await resp.json().catch(() => ({ error: "Request failed" }));
+        if (resp.status === 429) toast.error("Rate limited — slow down a bit");
+        else if (resp.status === 402) toast.error("AI credits depleted");
+        else toast.error(err.error || "Chat error");
         setMessages(prev => [...prev, { role: "assistant", content: `⚠ Error: ${err.error || "Unknown error"}` }]);
         setIsLoading(false);
         return;
@@ -85,11 +144,14 @@ const AIAssistant = () => {
           } catch { /* partial json */ }
         }
       }
-    } catch (e) {
-      console.error(e);
-      setMessages(prev => [...prev, { role: "assistant", content: "⚠ Connection error. Please try again." }]);
+    } catch (e: any) {
+      if (e.name !== "AbortError") {
+        console.error(e);
+        setMessages(prev => [...prev, { role: "assistant", content: "⚠ Connection error. Please try again." }]);
+      }
     }
     setIsLoading(false);
+    abortRef.current = null;
   };
 
   const send = (text: string) => {
@@ -101,80 +163,157 @@ const AIAssistant = () => {
     streamChat(updated);
   };
 
+  const stopGeneration = () => {
+    abortRef.current?.abort();
+    setIsLoading(false);
+  };
+
+  const clearChat = () => {
+    setMessages([]);
+    toast.success("Conversation cleared");
+  };
+
+  const exportChat = () => {
+    const md = messages.map(m => `## ${m.role === "user" ? "👤 User" : "🤖 AI-IDS Sentinel"}\n\n${m.content}`).join("\n\n---\n\n");
+    const blob = new Blob([`# AI-IDS Conversation Export\n_${new Date().toISOString()}_\n\n---\n\n${md}`], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `ai-ids-chat-${Date.now()}.md`; a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Chat exported");
+  };
+
+  const copyMessage = (content: string) => {
+    navigator.clipboard.writeText(content);
+    toast.success("Copied to clipboard");
+  };
+
   const quickActions = [
-    { icon: Zap, label: "Explain Attack", prompt: "Explain the most recent attack detected by the IDS. Include threat summary, confidence score, severity, MITRE ATT&CK mapping, and mitigation steps." },
-    { icon: Map, label: "MITRE Mapping", prompt: "Show the MITRE ATT&CK mapping for all currently detected techniques in the system. Explain each technique and its relationship to recent threats." },
-    { icon: FileText, label: "Incident Report", prompt: "Generate a formal incident report for the current security situation. Include timeline, affected systems, threat analysis, and recommended actions." },
+    { icon: Zap, label: "Explain Active Threat", prompt: "Analyze the most recent active threat in the live system context. Provide full threat summary, confidence score, MITRE mapping, IOCs, and prioritized mitigation steps." },
+    { icon: Map, label: "MITRE ATT&CK Map", prompt: "Map all currently detected MITRE ATT&CK techniques from the live system context. For each technique, explain the tactic, sub-techniques, real-world APT groups using it, and detection opportunities." },
+    { icon: FileText, label: "Incident Report", prompt: "Generate a formal NIST SP 800-61 incident report based on the live system telemetry. Include: Detection & Analysis, Containment, Eradication, Recovery, Post-Incident Activity, and Lessons Learned." },
+    { icon: Shield, label: "Defense Posture", prompt: "Audit the current defensive posture using the live metrics. Score us against NIST CSF (Identify, Protect, Detect, Respond, Recover) and recommend top 5 improvements." },
+    { icon: Bug, label: "Threat Hunt", prompt: "Initiate a proactive threat hunt. Generate 5 hypothesis-driven hunt queries (with KQL/SPL/EQL syntax) based on the detected techniques and IOCs in the live system." },
+    { icon: Code2, label: "Generate Sigma Rule", prompt: "Generate a production-ready Sigma detection rule for the most critical attack pattern in the current system context. Include full YAML with logsource, detection, condition, and falsepositives." },
+    { icon: Network, label: "Network Forensics", prompt: "Perform network forensics analysis on the current network nodes and logs. Identify lateral movement paths, suspicious flows, and recommend network segmentation changes." },
+    { icon: Target, label: "Attribute Threat Actor", prompt: "Based on the detected TTPs and IOCs, attribute this activity to known threat actor groups (APT/cybercrime). Compare TTPs against MITRE Groups database." },
+    { icon: BookOpen, label: "IR Playbook", prompt: "Generate a step-by-step incident response playbook for the current active attack type. Include roles (IC, scribe, comms), decision trees, and escalation criteria." },
+    { icon: AlertTriangle, label: "Risk Assessment", prompt: "Perform a quantitative risk assessment for the current threats. Calculate CVSS v3.1 scores, business impact (financial/operational/reputational), and prioritize by ALE." },
+    { icon: Search, label: "IOC Enrichment", prompt: "Enrich the top threat indicators from the live system. For each IP/domain/hash, provide context: ASN, geolocation, known associations, threat feed presence, and recommended action." },
+    { icon: Cpu, label: "AI Confidence Audit", prompt: "Audit the AI-IDS detection confidence. Explain how the defense score and detection time are calculated, identify potential false positive/negative risks, and suggest model tuning." },
   ];
 
   return (
     <CyberLayout>
       <div className="flex flex-col h-[calc(100vh-2rem)] lg:h-[calc(100vh-3rem)] animate-fade-in">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-4 flex-wrap">
           <div className="p-2 rounded-lg bg-primary/10 neon-glow-green">
             <Bot className="w-6 h-6 text-primary" />
           </div>
           <div>
-            <h1 className="font-mono text-lg uppercase tracking-widest text-primary text-glow-green">AI Assistant</h1>
-            <p className="font-mono text-xs text-muted-foreground">Threat Analysis Terminal</p>
+            <h1 className="font-mono text-lg uppercase tracking-widest text-primary text-glow-green">AI-IDS Sentinel</h1>
+            <p className="font-mono text-xs text-muted-foreground">Threat Analysis Terminal · Live SOC Context</p>
           </div>
-          <div className="ml-auto flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-primary animate-pulse-glow" />
-            <span className="font-mono text-xs text-primary">ONLINE</span>
+          <div className="ml-auto flex items-center gap-2 flex-wrap">
+            <Badge variant="outline" className="font-mono text-[10px] border-primary/30 text-primary">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse-glow mr-1.5" />
+              {sim.isRunning ? "INCIDENT" : "ONLINE"}
+            </Badge>
+            <Badge variant="outline" className="font-mono text-[10px] border-neon-purple/30 text-neon-purple">
+              {sim.detectedTechniques.length} TTPs
+            </Badge>
+            <Badge variant="outline" className="font-mono text-[10px] border-neon-amber/30 text-neon-amber">
+              {sim.activeAlerts} ALERTS
+            </Badge>
+            <Select value={model} onValueChange={setModel}>
+              <SelectTrigger className="w-[200px] h-8 font-mono text-xs border-primary/30 bg-background/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MODELS.map(m => <SelectItem key={m.value} value={m.value} className="font-mono text-xs">{m.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline" size="sm"
+              className={`font-mono text-xs h-8 ${includeContext ? "border-primary/50 text-primary bg-primary/10" : "border-muted text-muted-foreground"}`}
+              onClick={() => setIncludeContext(v => !v)}
+              title="Toggle live SOC context injection"
+            >
+              CTX {includeContext ? "ON" : "OFF"}
+            </Button>
+            <Button variant="outline" size="icon" className="h-8 w-8 border-primary/30" onClick={exportChat} disabled={messages.length === 0} title="Export chat as Markdown">
+              <Download className="w-3.5 h-3.5" />
+            </Button>
+            <Button variant="outline" size="icon" className="h-8 w-8 border-neon-red/30 text-neon-red hover:bg-neon-red/10" onClick={clearChat} disabled={messages.length === 0} title="Clear conversation">
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
           </div>
         </div>
 
         {/* Quick Actions */}
-        <div className="flex gap-2 mb-4 flex-wrap">
-          {quickActions.map(a => (
-            <Button
-              key={a.label}
-              variant="outline"
-              size="sm"
-              className="font-mono text-xs border-primary/30 hover:border-primary/60 hover:bg-primary/10 text-primary"
-              onClick={() => send(a.prompt)}
-              disabled={isLoading}
-            >
-              <a.icon className="w-3.5 h-3.5 mr-1.5" />
-              {a.label}
-            </Button>
-          ))}
-        </div>
+        <ScrollArea className="mb-4 max-h-24">
+          <div className="flex gap-2 flex-wrap pb-1">
+            {quickActions.map(a => (
+              <Button
+                key={a.label}
+                variant="outline"
+                size="sm"
+                className="font-mono text-xs border-primary/30 hover:border-primary/60 hover:bg-primary/10 text-primary h-8"
+                onClick={() => send(a.prompt)}
+                disabled={isLoading}
+              >
+                <a.icon className="w-3.5 h-3.5 mr-1.5" />
+                {a.label}
+              </Button>
+            ))}
+          </div>
+        </ScrollArea>
 
         {/* Chat Area */}
-        <div className="flex-1 glass-card rounded-lg border border-primary/10 flex flex-col overflow-hidden">
+        <div className="flex-1 glass-card rounded-lg border border-primary/10 flex flex-col overflow-hidden min-h-0">
           <ScrollArea className="flex-1 p-4" ref={scrollRef as any}>
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full opacity-40 py-20">
-                <Bot className="w-12 h-12 text-primary mb-3" />
-                <p className="font-mono text-sm text-muted-foreground">AI-IDS ready. Ask a question or use quick actions.</p>
+              <div className="flex flex-col items-center justify-center h-full opacity-50 py-12 text-center">
+                <Bot className="w-12 h-12 text-primary mb-3 animate-pulse-glow" />
+                <p className="font-mono text-sm text-primary mb-1">AI-IDS Sentinel ready</p>
+                <p className="font-mono text-xs text-muted-foreground max-w-md">
+                  Connected to live SOC telemetry · {sim.detectedTechniques.length} active TTPs · {sim.totalThreats} threats tracked
+                </p>
+                <p className="font-mono text-xs text-muted-foreground mt-2">Use a quick action above or ask anything about the live system.</p>
               </div>
             )}
             <div className="space-y-4">
               {messages.map((m, i) => (
-                <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div key={i} className={`flex group ${m.role === "user" ? "justify-end" : "justify-start"}`}>
                   <div
-                    className={`max-w-[85%] rounded-lg px-4 py-3 font-mono text-sm ${
+                    className={`max-w-[85%] rounded-lg px-4 py-3 font-mono text-sm relative ${
                       m.role === "user"
                         ? "bg-primary/15 border border-primary/30 text-foreground"
                         : "bg-muted/50 border border-muted text-foreground"
                     }`}
                   >
                     {m.role === "assistant" ? (
-                      <div className="prose prose-sm prose-invert max-w-none [&_h2]:text-primary [&_h2]:text-sm [&_h2]:font-mono [&_h2]:mt-3 [&_h2]:mb-1 [&_strong]:text-primary [&_code]:text-neon-amber [&_li]:text-foreground [&_p]:text-foreground">
+                      <div className="prose prose-sm prose-invert max-w-none [&_h2]:text-primary [&_h2]:text-sm [&_h2]:font-mono [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-neon-blue [&_h3]:text-xs [&_h3]:font-mono [&_strong]:text-primary [&_code]:text-neon-amber [&_code]:bg-background/50 [&_code]:px-1 [&_code]:rounded [&_li]:text-foreground [&_p]:text-foreground [&_pre]:bg-background/70 [&_pre]:border [&_pre]:border-primary/20">
                         <ReactMarkdown>{m.content}</ReactMarkdown>
                       </div>
                     ) : (
                       <span dangerouslySetInnerHTML={{ __html: highlightKeywords(m.content) }} />
                     )}
+                    <button
+                      onClick={() => copyMessage(m.content)}
+                      className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-background border border-primary/30 rounded p-1 text-primary hover:bg-primary/10"
+                      title="Copy message"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </button>
                   </div>
                 </div>
               ))}
               {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
                 <div className="flex justify-start">
                   <div className="bg-muted/50 border border-muted rounded-lg px-4 py-3">
-                    <span className="font-mono text-sm text-primary blink-cursor">Analyzing</span>
+                    <span className="font-mono text-sm text-primary blink-cursor">Analyzing threat data</span>
                   </div>
                 </div>
               )}
@@ -182,24 +321,41 @@ const AIAssistant = () => {
           </ScrollArea>
 
           {/* Input */}
-          <div className="p-3 border-t border-primary/10 flex gap-2">
-            <input
+          <div className="p-3 border-t border-primary/10 flex gap-2 items-end">
+            <textarea
               ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && send(input)}
-              placeholder="Ask the AI assistant..."
-              className="flex-1 bg-background/50 border border-primary/20 rounded-md px-3 py-2 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
+              onKeyDown={e => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send(input);
+                }
+              }}
+              rows={1}
+              placeholder="Ask the AI-IDS Sentinel... (Shift+Enter for newline)"
+              className="flex-1 bg-background/50 border border-primary/20 rounded-md px-3 py-2 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 resize-none max-h-32"
               disabled={isLoading}
             />
-            <Button
-              size="icon"
-              onClick={() => send(input)}
-              disabled={isLoading || !input.trim()}
-              className="bg-primary/20 hover:bg-primary/30 border border-primary/30 text-primary"
-            >
-              <Send className="w-4 h-4" />
-            </Button>
+            {isLoading ? (
+              <Button
+                size="icon"
+                onClick={stopGeneration}
+                className="bg-neon-red/20 hover:bg-neon-red/30 border border-neon-red/30 text-neon-red"
+                title="Stop generation"
+              >
+                <span className="w-3 h-3 bg-neon-red" />
+              </Button>
+            ) : (
+              <Button
+                size="icon"
+                onClick={() => send(input)}
+                disabled={!input.trim()}
+                className="bg-primary/20 hover:bg-primary/30 border border-primary/30 text-primary"
+              >
+                <Send className="w-4 h-4" />
+              </Button>
+            )}
           </div>
         </div>
       </div>
