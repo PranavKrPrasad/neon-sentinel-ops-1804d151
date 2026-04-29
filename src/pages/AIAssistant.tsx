@@ -124,39 +124,36 @@ const AIAssistant = () => {
     }
   }, [messages]);
 
-  // Build live system context snapshot to send with each request
-  const systemContext = useMemo(() => ({
-    timestamp: new Date().toISOString(),
-    soc_status: sim.isRunning ? "ACTIVE_INCIDENT" : "MONITORING",
-    metrics: {
-      total_threats_24h: sim.totalThreats,
-      blocked_attacks: sim.blockedAttacks,
-      active_alerts: sim.activeAlerts,
-      block_rate_pct: ((sim.blockedAttacks / Math.max(1, sim.totalThreats)) * 100).toFixed(1),
-      detection_time_seconds: sim.detectionTime,
-      defense_score: sim.defenseScore,
-    },
-    active_simulation: sim.isRunning ? {
-      attack_type: sim.attackType,
-      intensity: sim.intensity,
-    } : null,
-    detected_mitre_techniques: sim.detectedTechniques.map(id => {
-      const t = mitreTechniques.find(x => x.id === id);
-      return t ? { id: t.id, name: t.name, tactic: t.tactic, severity: t.severity } : { id };
-    }),
-    top_threat_indicators: threatIndicators.slice(0, 5).map(t => ({
-      type: t.type, value: t.value, severity: t.severity, source: t.source, status: t.status,
-    })),
-    network_nodes: sim.nodes.map(n => ({
-      id: n.id, ip: n.ip, type: n.type, status: n.status,
-    })),
-    recent_logs: sim.logs.slice(0, 8),
-  }), [sim]);
-
   const streamChat = async (allMessages: Msg[]) => {
     setIsLoading(true);
-    let assistantSoFar = "";
     abortRef.current = new AbortController();
+
+    // History trim — only send the last N turns to model (saves tokens & latency)
+    const trimmed = allMessages.slice(-MAX_HISTORY);
+    const lastUserMsg = [...trimmed].reverse().find(m => m.role === "user")?.content || "";
+    const smartCtx = includeContext ? buildSmartContext(lastUserMsg, sim) : null;
+
+    // rAF-batched UI updates: accumulate tokens, flush once per frame (~60fps max)
+    let assistantSoFar = "";
+    let pending = false;
+    let assistantStarted = false;
+    const flush = () => {
+      pending = false;
+      setMessages(prev => {
+        if (!assistantStarted) {
+          assistantStarted = true;
+          return [...prev, { role: "assistant", content: assistantSoFar }];
+        }
+        const next = prev.slice();
+        next[next.length - 1] = { ...next[next.length - 1], content: assistantSoFar };
+        return next;
+      });
+    };
+    const schedule = () => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(flush);
+    };
 
     try {
       const resp = await fetch(CHAT_URL, {
@@ -166,11 +163,7 @@ const AIAssistant = () => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({
-          messages: allMessages,
-          systemContext: includeContext ? systemContext : null,
-          model,
-        }),
+        body: JSON.stringify({ messages: trimmed, systemContext: smartCtx, model }),
       });
 
       if (!resp.ok || !resp.body) {
@@ -205,17 +198,13 @@ const AIAssistant = () => {
             const content = parsed.choices?.[0]?.delta?.content;
             if (content) {
               assistantSoFar += content;
-              setMessages(prev => {
-                const last = prev[prev.length - 1];
-                if (last?.role === "assistant") {
-                  return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
-                }
-                return [...prev, { role: "assistant", content: assistantSoFar }];
-              });
+              schedule();
             }
           } catch { /* partial json */ }
         }
       }
+      // Final flush to ensure last tokens render
+      if (pending || assistantSoFar) flush();
     } catch (e: any) {
       if (e.name !== "AbortError") {
         console.error(e);
@@ -226,14 +215,13 @@ const AIAssistant = () => {
     abortRef.current = null;
   };
 
-  const send = (text: string) => {
+  const send = useCallback((text: string) => {
     if (!text.trim() || isLoading) return;
     const userMsg: Msg = { role: "user", content: text.trim() };
-    const updated = [...messages, userMsg];
-    setMessages(updated);
+    setMessages(prev => [...prev, userMsg]);
     setInput("");
-    streamChat(updated);
-  };
+    streamChat([...messages, userMsg]);
+  }, [isLoading, messages, model, includeContext, sim]);
 
   const stopGeneration = () => {
     abortRef.current?.abort();
