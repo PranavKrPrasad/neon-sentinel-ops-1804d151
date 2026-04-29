@@ -243,10 +243,10 @@ const AIAssistant = () => {
     toast.success("Chat exported");
   };
 
-  const copyMessage = (content: string) => {
+  const copyMessage = useCallback((content: string) => {
     navigator.clipboard.writeText(content);
     toast.success("Copied to clipboard");
-  };
+  }, []);
 
   const quickActions = [
     { icon: Zap, label: "Explain Active Threat", prompt: "Analyze the most recent active threat in the live system context. Provide full threat summary, confidence score, MITRE mapping, IOCs, and prioritized mitigation steps." },
