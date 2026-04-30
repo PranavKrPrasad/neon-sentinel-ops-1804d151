@@ -1,4 +1,4 @@
-import { ShieldAlert, ShieldCheck, AlertTriangle, Clock, Bot, FlaskConical, Monitor, Search, Map, Network } from "lucide-react";
+import { ShieldAlert, ShieldCheck, AlertTriangle, Clock, Bot, FlaskConical, Monitor, Search, Map, Network, Mail } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import CyberLayout from "@/components/layout/CyberLayout";
 import TopBanner from "@/components/dashboard/TopBanner";
@@ -15,6 +15,7 @@ const modules = [
   { icon: Search, label: "Threat Intel", desc: "IOC database & indicators", path: "/threat-intel", color: "border-neon-red/30 hover:border-neon-red/60 text-neon-red neon-glow-red" },
   { icon: Map, label: "MITRE ATT&CK", desc: "Interactive technique matrix", path: "/mitre", color: "border-accent/30 hover:border-accent/60 text-accent neon-glow-purple" },
   { icon: Network, label: "Network", desc: "Topology & traffic monitor", path: "/network", color: "border-neon-blue/30 hover:border-neon-blue/60 text-neon-blue neon-glow-blue" },
+  { icon: Mail, label: "Spam & Spoofing", desc: "AI email threat detection", path: "/spam", color: "border-neon-amber/30 hover:border-neon-amber/60 text-neon-amber neon-glow-amber" },
 ];
 
 const Index = () => {

@@ -8,6 +8,7 @@ import {
   Search,
   Map,
   Network,
+  Mail,
   Shield,
   ChevronLeft,
   ChevronRight,
@@ -25,6 +26,7 @@ const navItems = [
   { icon: Search, label: "Threat Intel", path: "/threat-intel" },
   { icon: Map, label: "MITRE ATT&CK", path: "/mitre" },
   { icon: Network, label: "Network", path: "/network" },
+  { icon: Mail, label: "Spam & Spoofing", path: "/spam" },
 ];
 
 const NavSidebar = () => {
