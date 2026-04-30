@@ -100,9 +100,9 @@ const Training = () => {
       if (error) throw error;
       if (data?.error) { toast.error(data.error); return; }
       setResults(prev => [{
-        id: `e-${Date.now()}`, kind: "email",
+        id: `e-${Date.now()}`, kind: "email" as const,
         input: `${sample.displayName} — "${sample.subject.slice(0, 40)}"`,
-        expected: sample.category, predicted: data.label,
+        expected: sample.category as string, predicted: data.label,
         confidence: data.confidence ?? 0, reasoning: data.reasoning ?? "",
         correct: !!data.correct, timestamp: Date.now(),
       }, ...prev].slice(0, 100));
@@ -127,7 +127,7 @@ const Training = () => {
       if (error) throw error;
       if (data?.error) { toast.error(data.error); return; }
       setResults(prev => [{
-        id: `a-${Date.now()}`, kind: "attack",
+        id: `a-${Date.now()}`, kind: "attack" as const,
         input: log.slice(0, 80) + "...",
         expected, predicted: data.label,
         confidence: data.confidence ?? 0, reasoning: data.reasoning ?? "",
