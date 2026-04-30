@@ -13,6 +13,7 @@ import ThreatIntel from "./pages/ThreatIntel";
 import MitreMapping from "./pages/MitreMapping";
 import NetworkMonitor from "./pages/NetworkMonitor";
 import SpamDetection from "./pages/SpamDetection";
+import Training from "./pages/Training";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -37,6 +38,7 @@ const AnimatedRoutes = () => {
           <Route path="/mitre" element={<MitreMapping />} />
           <Route path="/network" element={<NetworkMonitor />} />
           <Route path="/spam" element={<SpamDetection />} />
+          <Route path="/training" element={<Training />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </motion.div>
